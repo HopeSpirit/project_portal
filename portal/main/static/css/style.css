@@ -1,0 +1,92 @@
+/* Сброс и базовые настройки */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #f0f2f5; /* или любой другой фон */
+    font-family: Arial, sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+
+.background-logos {
+    position: fixed;      /* Фиксируем на весь экран */
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;           /* Помещаем под форму */
+    pointer-events: none; /* Чтобы логотипы не мешали кликать по форме */
+    opacity: 0.5;         /* Прозрачность 50% для всех логотипов сразу */
+}
+
+/* Общие стили для всех логотипов */
+.background-logos img {
+    position: absolute;
+    width: 150px;          /* Размер логотипов */
+    height: auto;
+    opacity: 0.6;         /* Дополнительная прозрачность внутри контейнера */
+    filter: grayscale(30%); /* Можно добавить эффект */
+    /* transition: all 0.3s ease; */
+}
+
+/* Верхний ряд */
+.logo-argus    { top: 5%; left: 5%; }
+.logo-cerberus { top: 5%; left: 15%; }
+.logo-duma     { top: 5%; left: 30%; }
+.logo-ecert    { top: 5%; left: 50%; }
+.logo-galen    { top: 5%; left: 68%; }
+.logo-germes   { top: 5%; left: 82%; }
+
+/* Средний ряд */
+.logo-herriot  { top: 25%; left: 2%; }
+.logo-ikar     { top: 25%; left: 20%; }
+.logo-irena    { top: 25%; left: 40%; }
+.logo-mercury  { top: 25%; left: 60%; }
+
+
+
+/* Нижний ряд */
+.logo-pasport  { top: 25%; left: 78%; }
+.logo-sirano   { top: 25%; left: 92%; }
+.logo-tor      { top: 50%; left: 10%; }
+.logo-vesta    { top: 50%; left: 35%; }
+/* Можно добавить еще или распределить по-другому */
+
+
+.auth-container {
+    position: relative;
+    z-index: 1;           /* Поверх логотипов */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 100vh;
+}
+
+.container-auth input{
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+.container-auth button {
+    width: 100%;
+    padding: 10px;
+    background-color: #ff1100;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}

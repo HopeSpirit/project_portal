@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Портал ТП</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <script src="{% static 'js/script.js' %}"></script>
+</head>
+<body>
+    
+    <div class="container-auth">
+        <form method="post">
+            {% csrf_token %}
+            {% for message in messages %}
+                <p role="status">{{ message }}</p>
+            {% endfor %}
+            <input type="text" name="username" placeholder="Логин" required>
+            <input type="password" name="password" placeholder="Пароль" required>
+            <button type="submit">Войти</button>
+        </form>
+    </div>
+  <div class="background-logos">
+        <img src="{% static 'img/argus.png' %}" alt="argus" class="logo-argus">
+        <img src="{% static 'img/cerberus.png' %}" alt="cerberus" class="logo-cerberus">
+        <img src="{% static 'img/duma.png' %}" alt="duma" class="logo-duma">
+        <img src="{% static 'img/ecert.png' %}" alt="ecert" class="logo-ecert">
+        <img src="{% static 'img/galen.png' %}" alt="galen" class="logo-galen">
+        <img src="{% static 'img/germes.png' %}" alt="germes" class="logo-germes">
+        <img src="{% static 'img/herriot.png' %}" alt="herriot" class="logo-herriot">
+        <img src="{% static 'img/ikar.png' %}" alt="ikar" class="logo-ikar">
+        <img src="{% static 'img/irena.png' %}" alt="irena" class="logo-irena">
+        <img src="{% static 'img/mercury.png' %}" alt="mercury" class="logo-mercury">
+        <img src="{% static 'img/pasport.png' %}" alt="pasport" class="logo-pasport">
+        <img src="{% static 'img/sirano.png' %}" alt="sirano" class="logo-sirano">
+        <img src="{% static 'img/tor.png' %}" alt="tor" class="logo-tor">
+        <img src="{% static 'img/vesta.png' %}" alt="vesta" class="logo-vesta">
+    </div>
+</body>
+<script>
+    document.querySelectorAll('.background-logos img').forEach(img => {
+        const x = Math.random() * 90;  // 0-90%
+        const y = Math.random() * 90;  // 0-90%
+        img.style.left = x + '%';
+        img.style.top = y + '%';
+        // img.style.transform = `rotate(${Math.random() * 360}deg)`; // случайный поворот
+    });
+</script>
+</body>
+</html>
