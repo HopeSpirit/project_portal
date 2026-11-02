@@ -1,6 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,9 +16,10 @@
             {% for message in messages %}
                 <p role="status">{{ message }}</p>
             {% endfor %}
+            <input type="hidden" name="next" value="{{ request.GET.next }}">
             <input type="text" name="username" placeholder="Логин" required>
             <input type="password" name="password" placeholder="Пароль" required>
-            <button type="submit">Войти</button>
+            <button type="submit">Войти</button>
         </form>
     </div>
   <div class="background-logos">
@@ -47,5 +48,4 @@
         // img.style.transform = `rotate(${Math.random() * 360}deg)`; // случайный поворот
     });
 </script>
-</body>
 </html>

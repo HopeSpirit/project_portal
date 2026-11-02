@@ -11,34 +11,26 @@
         <div class="container">
             <a class="navbar-brand" href="#">Портал компании</a>
             <div class="navbar-nav">
-                <a class="nav-link" href="user/news.html">Новости</a>
-                <a class="nav-link" href="user/activity.html">Деятельность</a>
+                <a class="nav-link" href="{% url 'news' %}">Новости</a>
+                <a class="nav-link" href="{% url 'do' %}">Деятельность</a>
                 <a class="nav-link" href="user/rating.html">Оценка</a>
                 <a class="nav-link" href="user/wiki.html">Вики</a>
                 <a class="nav-link" href="user/templates.html">Шаблоны</a>
-                <button class="btn btn-outline-light" onclick="logout()">Выйти</button>
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-light" type="submit">Выйти</button>
+                </form>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
+        {% for message in messages %}
+            <p role="status">{{ message }}</p>
+        {% endfor %}
         <h1>Добро пожаловать!</h1>
         <p>Выберите раздел в меню для работы.</p>
     </div>
 
-    <!-- <script>
-        function logout() {
-    localStorage.removeItem('token');
-    window.location.href = '/frontend/auth.html';
-}
-
-// Проверка авторизации при загрузке страницы
-document.addEventListener('DOMContentLoaded', () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-        window.location.href = '/frontend/auth.html';
-    }
-});
-</script> -->
 </body>
 </html>
