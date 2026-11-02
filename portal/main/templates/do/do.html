@@ -27,33 +27,6 @@
         <h2>Деятельность</h2>
         <div id="newsList"></div>
     </div>
-
-    <script>
-        async function loadNews() {
-            const token = localStorage.getItem('token');
-            const response = await fetch('/api/news', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (response.ok) {
-                const news = await response.json();
-                const newsList = document.getElementById('newsList');
-                newsList.innerHTML = news.map(item => `
-                    <div class="card mb-3">
-                        <div class="card-body">
-                            <h5 class="card-title">${item.title}</h5>
-                            <p class="card-text">${item.content}</p>
-                            <small class="text-muted">${new Date(item.created_at).toLocaleDateString()}</small>
-                        </div>
-                    </div>
-                `).join('');
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', loadNews);
-    </script>
 </body>
 </html>
 

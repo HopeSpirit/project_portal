@@ -4,8 +4,15 @@ from django.contrib.auth import authenticate, login
 from django.shortcuts import redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
+from django.db import transaction
+from django.db.models import Count, Q
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils import timezone
 from django.views.decorators.http import require_POST
+from .forms import NewsForm
+from .models import News, NewsRate
 
 # Create your views here.
 
@@ -50,9 +57,99 @@ def main_page(request):
 
 @login_required(login_url='index')
 def news(request):
-    return render(request, 'news/news.html')
+    return render_news_page(request)
+
+
+def render_news_page(request, form=None, status=200):
+    news_list = News.objects.select_related('author').annotate(
+        like_count=Count('rates', filter=Q(rates__like_news=True), distinct=True),
+        dislike_count=Count('rates', filter=Q(rates__dislike_news=True), distinct=True),
+    )
+    if not request.user.is_superuser:
+        user_votes = NewsRate.objects.filter(author_rate=request.user).order_by('-id')
+        votes_by_news = {}
+        for news_id, liked, disliked in user_votes.values_list(
+            'news_id', 'like_news', 'dislike_news'
+        ):
+            votes_by_news.setdefault(
+                news_id,
+                'like' if liked else 'dislike' if disliked else None,
+            )
+        for item in news_list:
+            item.user_vote = votes_by_news.get(item.pk)
+    else:
+        for item in news_list:
+            item.user_vote = None
+
+    return render(
+        request,
+        'news/news.html',
+        {
+            'news_list': news_list,
+            'is_superuser': request.user.is_superuser,
+            'form': form or NewsForm(),
+        },
+        status=status,
+    )
 
 
 @login_required(login_url='index')
-def news(request):
-    return render(request, 'do/do.html')
+@require_POST
+def add_news(request):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Добавлять новости могут только руководители.')
+
+    form = NewsForm(request.POST)
+    if form.is_valid():
+        News.objects.create(
+            text=form.cleaned_data['text'],
+            create_date=timezone.now(),
+            author=request.user,
+        )
+        messages.success(request, 'Новость добавлена.')
+        return redirect('news')
+
+    return render_news_page(request, form=form, status=400)
+
+
+@login_required(login_url='index')
+@require_POST
+def rate_news(request, news_id):
+    if request.user.is_superuser:
+        return HttpResponseForbidden('Суперпользователи не могут голосовать за новости.')
+
+    vote = request.POST.get('vote')
+    if vote not in ('like', 'dislike'):
+        return HttpResponseBadRequest('Выберите лайк или дизлайк.')
+
+    with transaction.atomic():
+        news_item = get_object_or_404(News.objects.select_for_update(), pk=news_id)
+        existing_votes = NewsRate.objects.filter(
+            author_rate=request.user,
+            news=news_item,
+        ).order_by('pk')
+        existing_vote = existing_votes.first()
+        if existing_vote:
+            existing_votes.exclude(pk=existing_vote.pk).delete()
+            existing_vote.like_news = vote == 'like'
+            existing_vote.dislike_news = vote == 'dislike'
+            existing_vote.date_rate = timezone.now()
+            existing_vote.save(update_fields=['like_news', 'dislike_news', 'date_rate'])
+        else:
+            NewsRate.objects.create(
+                like_news=vote == 'like',
+                dislike_news=vote == 'dislike',
+                author_rate=request.user,
+                date_rate=timezone.now(),
+                news=news_item,
+            )
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({
+            'like_count': NewsRate.objects.filter(news=news_item, like_news=True).count(),
+            'dislike_count': NewsRate.objects.filter(news=news_item, dislike_news=True).count(),
+            'user_vote': vote,
+        })
+
+    messages.success(request, 'Ваш голос сохранён.')
+    return redirect('news')
