@@ -12,7 +12,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from .forms import NewsForm
-from .models import News, NewsRate
+from .models import Called, News, NewsRate, Task
 
 # Create your views here.
 
@@ -54,6 +54,14 @@ def logout_view(request):
 @login_required(login_url='index')
 def main_page(request):
     return render(request, 'main_page/main.html')
+
+
+@login_required(login_url='index')
+def do_page(request):
+    calls = Called.objects.filter(user_call=request.user)
+    tasks = Task.objects.filter(closed_user_task=request.user)
+    return render(request, 'do/do.html', {'calls': calls, 'tasks': tasks})
+
 
 @login_required(login_url='index')
 def news(request):
@@ -166,5 +174,5 @@ def rate_news(request, news_id):
             'user_vote': vote,
         })
 
-    messages.success(request, 'Ваш голос сохранён.')
+    #messages.success(request, 'Ваш голос сохранён.')
     return redirect('news')

@@ -3,7 +3,7 @@ from django.test import TransactionTestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
-from .models import News, NewsRate
+from .models import Called, News, NewsRate, Task
 
 
 class UnmanagedNewsTablesMixin:
@@ -19,9 +19,23 @@ class UnmanagedNewsTablesMixin:
 		if cls.created_rate_table:
 			with connection.schema_editor() as schema_editor:
 				schema_editor.create_model(NewsRate)
+		cls.created_called_table = Called._meta.db_table not in connection.introspection.table_names()
+		if cls.created_called_table:
+			with connection.schema_editor() as schema_editor:
+				schema_editor.create_model(Called)
+		cls.created_task_table = Task._meta.db_table not in connection.introspection.table_names()
+		if cls.created_task_table:
+			with connection.schema_editor() as schema_editor:
+				schema_editor.create_model(Task)
 
 	@classmethod
 	def tearDownClass(cls):
+		if cls.created_task_table:
+			with connection.schema_editor() as schema_editor:
+				schema_editor.delete_model(Task)
+		if cls.created_called_table:
+			with connection.schema_editor() as schema_editor:
+				schema_editor.delete_model(Called)
 		if cls.created_rate_table:
 			with connection.schema_editor() as schema_editor:
 				schema_editor.delete_model(NewsRate)
@@ -119,6 +133,50 @@ class LoginTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, 'Новости компании')
+
+	def test_do_page_shows_only_current_users_calls(self):
+		other_user = User.objects.create_user(username='other-user', password='secure-password')
+		own_call = Called.objects.create(
+			number_phone='1234567890',
+			date_call=timezone.now(),
+			user_call=self.user,
+		)
+		Called.objects.create(
+			number_phone='0987654321',
+			date_call=timezone.now(),
+			user_call=other_user,
+		)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('do'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, own_call.number_phone)
+		self.assertNotContains(response, '0987654321')
+		self.assertContains(response, 'Дата звонка')
+
+	def test_do_page_shows_only_current_users_tasks(self):
+		other_user = User.objects.create_user(username='other-task-user', password='secure-password')
+		own_task = Task.objects.create(
+			number_task='TASK-001',
+			start_date_task=timezone.now(),
+			closed_date_task=timezone.now(),
+			closed_user_task=self.user,
+		)
+		Task.objects.create(
+			number_task='TASK-002',
+			start_date_task=timezone.now(),
+			closed_user_task=other_user,
+		)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('do'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, own_task.number_task)
+		self.assertNotContains(response, 'TASK-002')
+		self.assertContains(response, 'Дата открытия')
+		self.assertContains(response, 'Дата закрытия')
 
 
 class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):

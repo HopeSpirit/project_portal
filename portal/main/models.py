@@ -49,3 +49,43 @@ class NewsRate(models.Model):
     class Meta:
         db_table = 'news_rate'
         managed = False
+
+
+class Called(models.Model):
+    id = models.AutoField(primary_key=True)
+    number_phone = models.CharField(max_length=10, blank=True, null=True)
+    date_call = models.DateTimeField(blank=True, null=True)
+    record_call_id = models.CharField(max_length=36, blank=True, null=True)
+    user_call = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.DO_NOTHING,
+        db_column='user_call',
+        related_name='calls',
+        blank=True,
+        null=True,
+    )
+
+    class Meta:
+        db_table = 'called'
+        managed = False
+        ordering = ('-date_call',)
+
+
+class Task(models.Model):
+    id = models.AutoField(primary_key=True)
+    number_task = models.CharField(max_length=10, blank=True, null=True)
+    start_date_task = models.DateTimeField(blank=True, null=True)
+    closed_date_task = models.DateTimeField(blank=True, null=True)
+    closed_user_task = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.DO_NOTHING,
+        db_column='closed_user_task',
+        related_name='closed_tasks',
+        blank=True,
+        null=True,
+    )
+
+    class Meta:
+        db_table = 'task'
+        managed = False
+        ordering = ('-start_date_task',)
