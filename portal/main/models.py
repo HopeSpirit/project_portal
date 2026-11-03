@@ -6,6 +6,7 @@ class News(models.Model):
     id = models.AutoField(primary_key=True)
     text = models.CharField(max_length=2500, blank=True, null=True)
     create_date = models.DateTimeField(db_column='createDate', blank=True, null=True)
+    is_active = models.BooleanField(db_column='isActive', blank=True, null=True, default=True)
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.DO_NOTHING,

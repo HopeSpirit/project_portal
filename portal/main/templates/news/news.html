@@ -49,7 +49,15 @@
             {% for item in news_list %}
                 <article class="card mb-3">
                     <div class="card-body">
-                        <p class="card-text">{{ item.text|linebreaksbr }}</p>
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <p class="card-text">{{ item.text|linebreaksbr }}</p>
+                            {% if is_superuser %}
+                                <form method="post" action="{% url 'deactivate_news' item.pk %}" class="flex-shrink-0">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-danger text-nowrap" type="submit">Удалить новость</button>
+                                </form>
+                            {% endif %}
+                        </div>
                         <small class="text-muted">
                             {{ item.create_date|date:"d.m.Y H:i" }}
                             {% if item.author %} · {{ item.author.get_full_name|default:item.author.username }}{% endif %}

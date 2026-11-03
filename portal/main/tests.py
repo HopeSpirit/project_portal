@@ -168,6 +168,50 @@ class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 
 		self.assertContains(response, 'Добавить новость')
 
+	def test_superuser_can_deactivate_news(self):
+		news_item = News.objects.create(
+			text='Новость для удаления',
+			create_date=timezone.now(),
+			author=self.supervisor,
+		)
+		self.client.force_login(self.supervisor)
+
+		response = self.client.post(reverse('deactivate_news', args=[news_item.pk]))
+
+		self.assertRedirects(response, reverse('news'))
+		news_item.refresh_from_db()
+		self.assertFalse(news_item.is_active)
+		self.assertNotContains(self.client.get(reverse('news')), 'Новость для удаления')
+
+	def test_regular_user_cannot_deactivate_news(self):
+		news_item = News.objects.create(
+			text='Новость для удаления',
+			create_date=timezone.now(),
+			author=self.supervisor,
+		)
+		self.client.force_login(self.regular_user)
+
+		response = self.client.post(reverse('deactivate_news', args=[news_item.pk]))
+
+		self.assertEqual(response.status_code, 403)
+		news_item.refresh_from_db()
+		self.assertTrue(news_item.is_active)
+
+	def test_inactive_news_is_hidden_and_delete_button_is_admin_only(self):
+		News.objects.create(text='Активная новость', is_active=True)
+		News.objects.create(text='Неактивная новость', is_active=False)
+		self.client.force_login(self.regular_user)
+
+		response = self.client.get(reverse('news'))
+
+		self.assertContains(response, 'Активная новость')
+		self.assertNotContains(response, 'Неактивная новость')
+		self.assertNotContains(response, 'Удалить новость')
+
+		self.client.force_login(self.supervisor)
+		response = self.client.get(reverse('news'))
+		self.assertContains(response, 'Удалить новость')
+
 	def test_regular_user_can_like_and_change_vote(self):
 		news_item = News.objects.create(text='Новость для голосования', create_date=timezone.now())
 		self.client.force_login(self.regular_user)

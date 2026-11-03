@@ -61,7 +61,9 @@ def news(request):
 
 
 def render_news_page(request, form=None, status=200):
-    news_list = News.objects.select_related('author').annotate(
+    news_list = News.objects.filter(
+        Q(is_active=True) | Q(is_active__isnull=True)
+    ).select_related('author').annotate(
         like_count=Count('rates', filter=Q(rates__like_news=True), distinct=True),
         dislike_count=Count('rates', filter=Q(rates__dislike_news=True), distinct=True),
     )
@@ -110,6 +112,19 @@ def add_news(request):
         return redirect('news')
 
     return render_news_page(request, form=form, status=400)
+
+
+@login_required(login_url='index')
+@require_POST
+def deactivate_news(request, news_id):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Удалять новости могут только администраторы.')
+
+    news_item = get_object_or_404(News, pk=news_id)
+    news_item.is_active = False
+    news_item.save(update_fields=['is_active'])
+    messages.success(request, 'Новость удалена.')
+    return redirect('news')
 
 
 @login_required(login_url='index')
