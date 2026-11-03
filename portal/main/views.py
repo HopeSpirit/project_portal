@@ -12,7 +12,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from .forms import NewsForm
-from .models import Called, News, NewsRate, Task
+from .models import CallRate, Called, News, NewsRate, Task
 
 # Create your views here.
 
@@ -102,6 +102,13 @@ def render_news_page(request, form=None, status=200):
         status=status,
     )
 
+
+@login_required(login_url='index')
+def rate_page(request):
+    call_ratings = CallRate.objects.filter(
+        id_call__user_call=request.user,
+    ).select_related('id_call')
+    return render(request, 'rate/rate.html', {'call_ratings': call_ratings})
 
 @login_required(login_url='index')
 @require_POST

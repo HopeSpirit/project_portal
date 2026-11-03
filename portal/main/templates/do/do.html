@@ -9,11 +9,11 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="../index.html">Портал компании</a>
+            <a class="navbar-brand" href="{% url 'main_page' %}">Портал компании</a>
             <div class="navbar-nav">
                 <a class="nav-link" href="{% url 'news' %}">Новости</a>
                 <a class="nav-link" href="{% url 'do' %}">Деятельность</a>
-                <a class="nav-link" href="rating.html">Оценка</a>
+                <a class="nav-link" href="{% url 'rate' %}">Оценка</a>
                 <a class="nav-link" href="wiki.html">Вики</a>
                 <a class="nav-link" href="templates.html">Шаблоны</a>
                 <form method="post" action="{% url 'logout' %}">

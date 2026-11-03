@@ -71,6 +71,26 @@ class Called(models.Model):
         ordering = ('-date_call',)
 
 
+class CallRate(models.Model):
+    id = models.AutoField(primary_key=True)
+    id_call = models.ForeignKey(
+        Called,
+        on_delete=models.DO_NOTHING,
+        db_column='id_call',
+        related_name='ratings',
+        blank=True,
+        null=True,
+    )
+    rate = models.FloatField(blank=True, null=True)
+    date_rate = models.DateTimeField(blank=True, null=True)
+    rate_text = models.CharField(max_length=2500, blank=True, null=True)
+
+    class Meta:
+        db_table = 'rate_call'
+        managed = False
+        ordering = ('-date_rate',)
+
+
 class Task(models.Model):
     id = models.AutoField(primary_key=True)
     number_task = models.CharField(max_length=10, blank=True, null=True)

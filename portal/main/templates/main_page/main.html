@@ -1,19 +1,22 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <title>Портал компании</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style_main.css' %}">
+    <script src="{% static 'js/script.js' %}"></script>
 
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="#">Портал компании</a>
+            <a class="navbar-brand" href="{% url 'main_page' %}">Портал компании</a>
             <div class="navbar-nav">
                 <a class="nav-link" href="{% url 'news' %}">Новости</a>
                 <a class="nav-link" href="{% url 'do' %}">Деятельность</a>
-                <a class="nav-link" href="user/rating.html">Оценка</a>
+                <a class="nav-link" href="{% url 'rate' %}">Оценка</a>
                 <a class="nav-link" href="user/wiki.html">Вики</a>
                 <a class="nav-link" href="user/templates.html">Шаблоны</a>
                 <form method="post" action="{% url 'logout' %}">
@@ -31,6 +34,30 @@
         <h1>Добро пожаловать!</h1>
         <p>Выберите раздел в меню для работы.</p>
     </div>
-
+  <div class="background-logos">
+        <img src="{% static 'img/argus.png' %}" alt="argus" class="logo-argus">
+        <img src="{% static 'img/cerberus.png' %}" alt="cerberus" class="logo-cerberus">
+        <img src="{% static 'img/duma.png' %}" alt="duma" class="logo-duma">
+        <img src="{% static 'img/ecert.png' %}" alt="ecert" class="logo-ecert">
+        <img src="{% static 'img/galen.png' %}" alt="galen" class="logo-galen">
+        <img src="{% static 'img/germes.png' %}" alt="germes" class="logo-germes">
+        <img src="{% static 'img/herriot.png' %}" alt="herriot" class="logo-herriot">
+        <img src="{% static 'img/ikar.png' %}" alt="ikar" class="logo-ikar">
+        <img src="{% static 'img/irena.png' %}" alt="irena" class="logo-irena">
+        <img src="{% static 'img/mercury.png' %}" alt="mercury" class="logo-mercury">
+        <img src="{% static 'img/pasport.png' %}" alt="pasport" class="logo-pasport">
+        <img src="{% static 'img/sirano.png' %}" alt="sirano" class="logo-sirano">
+        <img src="{% static 'img/tor.png' %}" alt="tor" class="logo-tor">
+        <img src="{% static 'img/vesta.png' %}" alt="vesta" class="logo-vesta">
+    </div>
 </body>
+<script>
+    document.querySelectorAll('.background-logos img').forEach(img => {
+        const x = Math.random() * 90;  // 0-90%
+        const y = Math.random() * 90;  // 0-90%
+        img.style.left = x + '%';
+        img.style.top = y + '%';
+        // img.style.transform = `rotate(${Math.random() * 360}deg)`; // случайный поворот
+    });
+</script>    
 </html>

@@ -3,7 +3,7 @@ from django.test import TransactionTestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
-from .models import Called, News, NewsRate, Task
+from .models import CallRate, Called, News, NewsRate, Task
 
 
 class UnmanagedNewsTablesMixin:
@@ -23,6 +23,10 @@ class UnmanagedNewsTablesMixin:
 		if cls.created_called_table:
 			with connection.schema_editor() as schema_editor:
 				schema_editor.create_model(Called)
+		cls.created_call_rate_table = CallRate._meta.db_table not in connection.introspection.table_names()
+		if cls.created_call_rate_table:
+			with connection.schema_editor() as schema_editor:
+				schema_editor.create_model(CallRate)
 		cls.created_task_table = Task._meta.db_table not in connection.introspection.table_names()
 		if cls.created_task_table:
 			with connection.schema_editor() as schema_editor:
@@ -33,6 +37,9 @@ class UnmanagedNewsTablesMixin:
 		if cls.created_task_table:
 			with connection.schema_editor() as schema_editor:
 				schema_editor.delete_model(Task)
+		if cls.created_call_rate_table:
+			with connection.schema_editor() as schema_editor:
+				schema_editor.delete_model(CallRate)
 		if cls.created_called_table:
 			with connection.schema_editor() as schema_editor:
 				schema_editor.delete_model(Called)
@@ -177,6 +184,35 @@ class LoginTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 		self.assertNotContains(response, 'TASK-002')
 		self.assertContains(response, 'Дата открытия')
 		self.assertContains(response, 'Дата закрытия')
+
+	def test_rate_page_shows_only_current_users_call_ratings(self):
+		own_call = Called.objects.create(number_phone='1234567890', user_call=self.user)
+		other_user = User.objects.create_user(username='other-rater', password='secure-password')
+		other_call = Called.objects.create(number_phone='0987654321', user_call=other_user)
+		CallRate.objects.create(
+			id_call=own_call,
+			rate=4.5,
+			date_rate=timezone.now(),
+			rate_text='Отличный разговор',
+		)
+		CallRate.objects.create(
+			id_call=other_call,
+			rate=2.0,
+			date_rate=timezone.now(),
+			rate_text='Чужая оценка',
+		)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('rate'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Оценка звонков')
+		self.assertContains(response, 'Оценки задач')
+		self.assertContains(response, 'Отличный разговор')
+		self.assertContains(response, '1234567890')
+		self.assertNotContains(response, 'Чужая оценка')
+		self.assertNotContains(response, '0987654321')
+		self.assertNotContains(response, 'Рейтинг новостей')
 
 
 class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
