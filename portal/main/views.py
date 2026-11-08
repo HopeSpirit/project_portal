@@ -10,7 +10,7 @@ from django.http import FileResponse, HttpResponseBadRequest, HttpResponseForbid
 from django.shortcuts import get_object_or_404
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 from .forms import NewsForm#, AudioRatingForm, CallRecordingUploadForm, 
 from .models import AudioRating, CallRate, Called, CallRecording, News, NewsRate, Task
 
@@ -70,7 +70,7 @@ def news(request):
     return render_news_page(request)
 
 
-def render_news_page(request, form=None, status=200):
+def render_news_page(request, form=None, edit_news=None, edit_form=None, status=200):
     news_list = News.objects.filter(
         Q(is_active=True) | Q(is_active__isnull=True)
     ).select_related('author').annotate(
@@ -100,6 +100,8 @@ def render_news_page(request, form=None, status=200):
             'news_list': news_list,
             'is_superuser': request.user.is_superuser,
             'form': form or NewsForm(),
+            'edit_news': edit_news,
+            'edit_form': edit_form,
         },
         status=status,
     )
@@ -225,6 +227,36 @@ def deactivate_news(request, news_id):
     news_item.save(update_fields=['is_active'])
     messages.success(request, 'Новость удалена.')
     return redirect('news')
+
+
+@login_required(login_url='index')
+@require_http_methods(['GET', 'POST'])
+def change_news(request, news_id):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Редактировать новости могут только администраторы.')
+
+    news_item = get_object_or_404(News, pk=news_id)
+    if request.method == 'GET':
+        return render_news_page(
+            request,
+            edit_news=news_item,
+            edit_form=NewsForm(initial={'text': news_item.text}),
+        )
+
+    form = NewsForm(request.POST)
+    if form.is_valid():
+        news_item.text = form.cleaned_data['text']
+        news_item.save(update_fields=['text'])
+        messages.success(request, 'Новость обновлена.')
+        return redirect('news')
+
+    return render_news_page(
+        request,
+        edit_news=news_item,
+        edit_form=form,
+        status=400,
+    )
+
 
 
 @login_required(login_url='index')

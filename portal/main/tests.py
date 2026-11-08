@@ -265,6 +265,46 @@ class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 
 		self.assertContains(response, 'Добавить новость')
 
+	def test_superuser_can_open_and_submit_news_edit_form(self):
+		news_item = News.objects.create(
+			text='Старая версия новости',
+			create_date=timezone.now(),
+			author=self.supervisor,
+		)
+		self.client.force_login(self.supervisor)
+
+		response = self.client.get(reverse('change_news', args=[news_item.pk]))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.context['edit_form']['text'].value(),
+			'Старая версия новости',
+		)
+
+		response = self.client.post(
+			reverse('change_news', args=[news_item.pk]),
+			{'text': 'Обновлённая новость'},
+		)
+
+		self.assertRedirects(response, reverse('news'))
+		news_item.refresh_from_db()
+		self.assertEqual(news_item.text, 'Обновлённая новость')
+
+	def test_regular_user_cannot_open_or_submit_news_edit_form(self):
+		news_item = News.objects.create(text='Неизменённая новость')
+		self.client.force_login(self.regular_user)
+
+		response = self.client.get(reverse('change_news', args=[news_item.pk]))
+		self.assertEqual(response.status_code, 403)
+
+		response = self.client.post(
+			reverse('change_news', args=[news_item.pk]),
+			{'text': 'Изменённая новость'},
+		)
+		self.assertEqual(response.status_code, 403)
+		news_item.refresh_from_db()
+		self.assertEqual(news_item.text, 'Неизменённая новость')
+
 	def test_superuser_can_deactivate_news(self):
 		news_item = News.objects.create(
 			text='Новость для удаления',
