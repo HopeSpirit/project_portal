@@ -6,19 +6,20 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.db import transaction
 from django.db.models import Count, Q
-from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from django.views.decorators.http import require_POST
-from .forms import NewsForm
-from .models import CallRate, Called, News, NewsRate, Task
+from .forms import NewsForm#, AudioRatingForm, CallRecordingUploadForm, 
+from .models import AudioRating, CallRate, Called, CallRecording, News, NewsRate, Task
 
 # Create your views here.
 
 def index(request):
     if request.user.is_authenticated:
-        return redirect('main_page')
+        return redirect('news')
+        #return redirect('main_page')
 
     if request.method == 'POST':
         username = request.POST.get('username', '')
@@ -34,7 +35,8 @@ def index(request):
                 require_https=request.is_secure(),
             ):
                 return redirect(next_url)
-            return redirect('main_page')
+            return redirect('news')
+            #return redirect('main_page')
         else:
             messages.error(request, 'Неверный логин или пароль.')
 
@@ -108,7 +110,90 @@ def rate_page(request):
     call_ratings = CallRate.objects.filter(
         id_call__user_call=request.user,
     ).select_related('id_call')
+    recording_ids = set(
+        CallRecording.objects.filter(
+            record_call_id__in=call_ratings.values('id_call__record_call_id'),
+        ).values_list('record_call_id', flat=True)
+    )
+    for rating in call_ratings:
+        rating.has_recording = bool(
+            rating.id_call and rating.id_call.record_call_id in recording_ids
+        )
     return render(request, 'rate/rate.html', {'call_ratings': call_ratings})
+
+
+# @login_required(login_url='index')
+# def record_page(request):
+#     if not request.user.is_superuser:
+#         return HttpResponseForbidden('Доступ разрешён только суперпользователям.')
+
+#     form = AudioRatingForm(request.POST or None, request.FILES or None)
+#     if request.method == 'POST':
+#         if form.is_valid():
+#             AudioRating.objects.create(
+#                 user=form.cleaned_data['target_user'],
+#                 audio_file=form.cleaned_data['audio_file'],
+#                 rating=form.cleaned_data['rating'],
+#             )
+#             messages.success(request, 'Файл и оценка сохранены.')
+#             return redirect('record')
+
+#     return render(
+#         request,
+#         'record/record.html',
+#         {
+#             'form': form,
+#             'show_upload_fields': bool(request.POST.get('target_user')),
+#         },
+#         status=400 if request.method == 'POST' and form.errors else 200,
+#     )
+
+
+# @login_required(login_url='index')
+# def upload_call_recording(request):
+#     if not request.user.is_superuser:
+#         return HttpResponseForbidden('Доступ разрешён только суперпользователям.')
+
+#     form = CallRecordingUploadForm(request.POST or None, request.FILES or None)
+#     if request.method == 'POST' and form.is_valid():
+#         call = form.cleaned_data['call']
+#         recording, created = CallRecording.objects.get_or_create(
+#             record_call_id=call.record_call_id,
+#             defaults={'audio_file': form.cleaned_data['audio_file']},
+#         )
+#         if not created:
+#             old_file = recording.audio_file
+#             recording.audio_file = form.cleaned_data['audio_file']
+#             recording.save(update_fields=['audio_file'])
+#             old_file.delete(save=False)
+#         messages.success(request, 'Запись звонка сохранена.')
+#         return redirect('upload_call_recording')
+
+#     return render(
+#         request,
+#         'record/call_recording_upload.html',
+#         {'form': form},
+#         status=400 if request.method == 'POST' and form.errors else 200,
+#     )
+
+
+@login_required(login_url='index')
+def play_call_recording(request, call_id):
+    call = get_object_or_404(
+        Called,
+        pk=call_id,
+        user_call=request.user,
+    )
+    get_object_or_404(
+        CallRate,
+        id_call=call,
+    )
+    recording = get_object_or_404(
+        CallRecording,
+        record_call_id=call.record_call_id,
+    )
+    return FileResponse(recording.audio_file.open('rb'), content_type='audio/mpeg')
+
 
 @login_required(login_url='index')
 @require_POST
@@ -145,12 +230,9 @@ def deactivate_news(request, news_id):
 @login_required(login_url='index')
 @require_POST
 def rate_news(request, news_id):
-    if request.user.is_superuser:
-        return HttpResponseForbidden('Суперпользователи не могут голосовать за новости.')
-
     vote = request.POST.get('vote')
     if vote not in ('like', 'dislike'):
-        return HttpResponseBadRequest('Выберите лайк или дизлайк.')
+        return HttpResponseBadRequest('нравится или не нравится')
 
     with transaction.atomic():
         news_item = get_object_or_404(News.objects.select_for_update(), pk=news_id)

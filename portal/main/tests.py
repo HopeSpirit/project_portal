@@ -1,9 +1,12 @@
+from tempfile import TemporaryDirectory
+
 from django.db import connection
-from django.test import TransactionTestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
-from .models import CallRate, Called, News, NewsRate, Task
+from .models import CallRate, Called, CallRecording, News, NewsRate, Task
 
 
 class UnmanagedNewsTablesMixin:
@@ -377,3 +380,186 @@ class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 		rendered_news = response.context['news_list'][0]
 		self.assertEqual(rendered_news.like_count, 1)
 		self.assertEqual(rendered_news.dislike_count, 0)
+from tempfile import TemporaryDirectory
+
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
+from django.urls import reverse
+
+from .models import AudioRating
+
+
+class AudioRatingPageTests(TestCase):
+    def setUp(self):
+        self.media_directory = TemporaryDirectory()
+        self.addCleanup(self.media_directory.cleanup)
+        media_settings = override_settings(MEDIA_ROOT=self.media_directory.name)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_superuser(
+            username='admin',
+            email='admin@example.com',
+            password='password',
+        )
+        self.user = user_model.objects.create_user(
+            username='employee',
+            password='password',
+        )
+
+    def test_only_superusers_can_open_page(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(reverse('record')).status_code, 403)
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('record'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'employee')
+        self.assertNotContains(response, 'admin')
+
+    def test_upload_and_rating_are_saved_for_selected_user(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse('record'),
+            {
+                'target_user': self.user.pk,
+                'rating': 4,
+                'audio_file': SimpleUploadedFile(
+                    'sample.mp3',
+                    b'ID3 audio sample',
+                    content_type='audio/mpeg',
+                ),
+            },
+        )
+
+        self.assertRedirects(response, reverse('record'))
+        saved_rating = AudioRating.objects.get()
+        self.assertEqual(saved_rating.user, self.user)
+        self.assertEqual(saved_rating.rating, 4)
+        self.assertTrue(saved_rating.audio_file.name.endswith('.mp3'))
+
+    def test_superuser_cannot_be_selected_as_rating_recipient(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse('record'),
+            {
+                'target_user': self.admin.pk,
+                'rating': 4,
+                'audio_file': SimpleUploadedFile('sample.mp3', b'ID3 audio sample'),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AudioRating.objects.exists())
+
+    def test_non_mp3_file_is_rejected(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse('record'),
+            {
+                'target_user': self.user.pk,
+                'rating': 4,
+                'audio_file': SimpleUploadedFile('sample.wav', b'audio sample'),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AudioRating.objects.exists())
+
+
+class CallRecordingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
+    def setUp(self):
+        self.media_directory = TemporaryDirectory()
+        self.addCleanup(self.media_directory.cleanup)
+        media_settings = override_settings(MEDIA_ROOT=self.media_directory.name)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+        self.user = User.objects.create_user(username='employee', password='password')
+        self.admin = User.objects.create_superuser(
+            username='admin',
+            email='admin@example.com',
+            password='password',
+        )
+        self.call = Called.objects.create(
+            number_phone='1234567890',
+            date_call=timezone.now(),
+            record_call_id='0a8d05fb-d7c5-11f1-b997-5c60ba5f55bd',
+            user_call=self.user,
+        )
+        CallRate.objects.create(
+            id_call=self.call,
+            rate=4.5,
+            date_rate=timezone.now(),
+            rate_text='Хороший звонок',
+        )
+
+    def test_owner_can_play_recorded_rated_call(self):
+        CallRecording.objects.create(
+            record_call_id=self.call.record_call_id,
+            audio_file=SimpleUploadedFile('call.mp3', b'ID3 call audio'),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse('play_call_recording', args=[self.call.pk]),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'audio/mpeg')
+        self.assertEqual(b''.join(response.streaming_content), b'ID3 call audio')
+
+    def test_other_user_cannot_play_call_recording(self):
+        CallRecording.objects.create(
+            record_call_id=self.call.record_call_id,
+            audio_file=SimpleUploadedFile('call.mp3', b'ID3 call audio'),
+        )
+        other_user = User.objects.create_user(username='other', password='password')
+        self.client.force_login(other_user)
+
+        response = self.client.get(
+            reverse('play_call_recording', args=[self.call.pk]),
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_call_rating_page_includes_playback_for_available_recording(self):
+        CallRecording.objects.create(
+            record_call_id=self.call.record_call_id,
+            audio_file=SimpleUploadedFile('call.mp3', b'ID3 call audio'),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('rate'))
+
+        self.assertContains(response, 'Хороший звонок')
+        self.assertContains(response, '<audio', html=False)
+        self.assertContains(
+            response,
+            reverse('play_call_recording', args=[self.call.pk]),
+        )
+
+    def test_superuser_can_upload_recording_for_call(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse('upload_call_recording'),
+            {
+                'call': self.call.pk,
+                'audio_file': SimpleUploadedFile('call.mp3', b'ID3 call audio'),
+            },
+        )
+
+        self.assertRedirects(response, reverse('upload_call_recording'))
+        recording = CallRecording.objects.get()
+        self.assertEqual(recording.record_call_id, self.call.record_call_id)
+        self.assertTrue(recording.audio_file.name.endswith('.mp3'))
+
+    def test_regular_user_cannot_upload_recordings(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('upload_call_recording'))
+
+        self.assertEqual(response.status_code, 403)

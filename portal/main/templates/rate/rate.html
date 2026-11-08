@@ -9,13 +9,14 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{% url 'main_page' %}">Портал компании</a>
+            <a class="navbar-brand" href="{% url 'main_page' %}">Портал поддержки</a>
             <div class="navbar-nav">
                 <a class="nav-link" href="{% url 'news' %}">Новости</a>
-                <a class="nav-link" href="{% url 'do' %}">Деятельность</a>
+                <a class="nav-link" href="{% url 'do' %}">Задачи</a>
                 <a class="nav-link" href="{% url 'rate' %}">Оценка</a>
-                <a class="nav-link" href="wiki.html">Вики</a>
-                <a class="nav-link" href="templates.html">Шаблоны</a>
+                {% comment %} {% if user.is_superuser %}<a class="nav-link" href="{% url 'record' %}">Оценка аудио</a>{% endif %} {% endcomment %}
+                {% comment %} <a class="nav-link" href="wiki.html">Вики</a>
+                <a class="nav-link" href="templates.html">Шаблоны</a> {% endcomment %}
                 <form method="post" action="{% url 'logout' %}">
                     {% csrf_token %}
                     <button class="btn btn-outline-light" type="submit">Выйти</button>
@@ -44,6 +45,7 @@
                                 <th scope="col">Текст оценки</th>
                                 <th scope="col">Оценка</th>
                                 <th scope="col">Номер телефона</th>
+                                <th scope="col">Запись звонка</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -53,10 +55,20 @@
                                     <td>{{ rating.rate_text|default:"—"|linebreaksbr }}</td>
                                     <td>{{ rating.rate|default:"—"|linebreaksbr }}</td>
                                     <td>{{ rating.id_call.number_phone|default:"—" }}</td>
+                                    <td>
+                                        {% if rating.has_recording %}
+                                            <audio controls preload="none" aria-label="Запись звонка {{ rating.id_call.number_phone }}">
+                                                <source src="{% url 'play_call_recording' rating.id_call_id %}" type="audio/mpeg">
+                                                Ваш браузер не поддерживает воспроизведение аудио.
+                                            </audio>
+                                        {% else %}
+                                            <span class="text-muted">Запись пока не загружена</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="3">Оценок звонков пока нет.</td>
+                                    <td colspan="5">Оценок звонков пока нет.</td>
                                 </tr>
                             {% endfor %}
                         </tbody>

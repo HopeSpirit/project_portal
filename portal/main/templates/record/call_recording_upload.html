@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Загрузка записи звонка</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'main_page' %}">Портал поддержки</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{% url 'news' %}">Новости</a>
+                <a class="nav-link" href="{% url 'do' %}">Задачи</a>
+                <a class="nav-link" href="{% url 'rate' %}">Оценка</a>
+                {% comment %} <a class="nav-link" href="{% url 'record' %}">Оценка аудио</a>
+                <a class="nav-link active" aria-current="page" href="{% url 'upload_call_recording' %}">Записи звонков</a> {% endcomment %}
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-light" type="submit">Выйти</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mt-4">
+        <h1>Загрузка записи звонка</h1>
+        <p>Выберите звонок и загрузите его MP3-файл. Запись станет доступна владельцу оценки в разделе «Оценка».</p>
+        {% for message in messages %}
+            <p class="alert alert-success" role="status">{{ message }}</p>
+        {% endfor %}
+
+        <form method="post" enctype="multipart/form-data" class="mt-4">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.call.id_for_label }}">{{ form.call.label }}</label>
+                {{ form.call }}
+                {% for error in form.call.errors %}
+                    <p class="text-danger mb-0" role="alert">{{ error }}</p>
+                {% endfor %}
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.audio_file.id_for_label }}">{{ form.audio_file.label }}</label>
+                {{ form.audio_file }}
+                {% for error in form.audio_file.errors %}
+                    <p class="text-danger mb-0" role="alert">{{ error }}</p>
+                {% endfor %}
+            </div>
+            <button class="btn btn-primary" type="submit">Сохранить запись</button>
+        </form>
+    </main>
+</body>
+</html>

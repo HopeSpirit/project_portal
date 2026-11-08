@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 
 class News(models.Model):
@@ -109,3 +110,40 @@ class Task(models.Model):
         db_table = 'task'
         managed = False
         ordering = ('-start_date_task',)
+
+
+class AudioRating(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='audio_ratings',
+    )
+    audio_file = models.FileField(upload_to='audio_ratings/%Y/%m/%d/')
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(rating__gte=1, rating__lte=5),
+                name='audio_rating_score_1_to_5',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.rating}/5'
+
+
+class CallRecording(models.Model):
+    record_call_id = models.CharField(max_length=36, unique=True)
+    audio_file = models.FileField(upload_to='call_recordings/%Y/%m/%d/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return self.record_call_id
