@@ -1,12 +1,19 @@
+html {
+    scrollbar-gutter: stable;
+}
+
 .background-logos {
-    position: fixed;      /* Фиксируем на весь экран */
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 0;           /* Помещаем под форму */
-    pointer-events: none; /* Чтобы логотипы не мешали кликать по форме */
-    opacity: 0.5;         /* Прозрачность 50% для всех логотипов сразу */
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+body > :not(.background-logos) {
+    position: relative;
+    z-index: 1;
 }
 
 /* Общие стили для всех логотипов */

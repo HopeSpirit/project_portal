@@ -1,0 +1,23 @@
+{% load static %}
+<div class="background-logos" aria-hidden="true">
+    <img src="{% static 'img/argus.png' %}" alt="argus" class="logo-argus">
+    <img src="{% static 'img/cerberus.png' %}" alt="cerberus" class="logo-cerberus">
+    <img src="{% static 'img/duma.png' %}" alt="duma" class="logo-duma">
+    <img src="{% static 'img/ecert.png' %}" alt="ecert" class="logo-ecert">
+    <img src="{% static 'img/galen.png' %}" alt="galen" class="logo-galen">
+    <img src="{% static 'img/germes.png' %}" alt="germes" class="logo-germes">
+    <img src="{% static 'img/herriot.png' %}" alt="herriot" class="logo-herriot">
+    <img src="{% static 'img/ikar.png' %}" alt="ikar" class="logo-ikar">
+    <img src="{% static 'img/irena.png' %}" alt="irena" class="logo-irena">
+    <img src="{% static 'img/mercury.png' %}" alt="mercury" class="logo-mercury">
+    <img src="{% static 'img/pasport.png' %}" alt="pasport" class="logo-pasport">
+    <img src="{% static 'img/sirano.png' %}" alt="sirano" class="logo-sirano">
+    <img src="{% static 'img/tor.png' %}" alt="tor" class="logo-tor">
+    <img src="{% static 'img/vesta.png' %}" alt="vesta" class="logo-vesta">
+</div>
+<script>
+    document.querySelectorAll('.background-logos img').forEach(img => {
+        img.style.left = `${Math.random() * 90}%`;
+        img.style.top = `${Math.random() * 90}%`;
+    });
+</script>

@@ -1,0 +1,299 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Сотрудники</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style_main.css' %}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'main_page' %}">Портал поддержки</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{% url 'news' %}">Новости</a>
+                <a class="nav-link" href="{% url 'do' %}">Задачи</a>
+                <a class="nav-link" href="{% url 'rate' %}">Оценка</a>
+                <a class="nav-link active" aria-current="page" href="{% url 'employees' %}">Сотрудники</a>
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-light" type="submit">Выйти</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mt-4">
+        <h1>Сотрудники</h1>
+        {% for message in messages %}
+            <p role="status">{{ message }}</p>
+        {% endfor %}
+
+        <div class="d-flex align-items-start gap-2 mb-4">
+            <button class="btn btn-outline-primary" type="button" id="open-add-employee">
+                Добавить
+            </button>
+            <dialog id="add-employee-dialog" class="border-0 rounded shadow p-4"
+                    style="width: min(32rem, calc(100% - 2rem));">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h4 mb-0">Добавить сотрудника</h2>
+                    <button class="btn-close" type="button" id="close-add-employee"
+                            aria-label="Закрыть"></button>
+                </div>
+                <form method="post" action="{% url 'add_employee' %}">
+                {% csrf_token %}
+                {% for field in form %}
+                    <div class="mb-3">
+                        {{ field.label_tag }}
+                        {{ field }}
+                        {% for error in field.errors %}
+                            <p class="text-danger mb-0" role="alert">{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+                {% for error in form.non_field_errors %}
+                    <p class="text-danger" role="alert">{{ error }}</p>
+                {% endfor %}
+                <button class="btn btn-success" type="submit">Создать сотрудника</button>
+                <p class="form-text">Пароль не задаётся здесь. После создания установите его через Django Admin.</p>
+                </form>
+            </dialog>
+            <details class="position-relative">
+                <summary class="btn btn-outline-primary">Скачать в</summary>
+                <ul class="list-group position-absolute top-100 start-0 mt-2 shadow"
+                    style="z-index: 1050; min-width: 10rem;">
+                    <li class="list-group-item">
+                        <a href="{% url 'export_employees' 'csv' %}">CSV</a>
+                    </li>
+                    <li class="list-group-item">
+                        <a href="{% url 'export_employees' 'xlsx' %}">Excel (.xlsx)</a>
+                    </li>
+                </ul>
+            </details>
+        </div>
+
+        <div id="employee-directory-list">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <form method="get" class="d-flex align-items-center gap-2">
+                    <label for="employees-per-page" class="form-label mb-0">Сотрудников на странице:</label>
+                    <select id="employees-per-page" name="per_page" class="form-select w-auto">
+                        {% for option in employees_per_page_options %}
+                            <option value="{{ option }}" {% if employees_per_page == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-outline-primary">Показать</button>
+                </form>
+                <span class="text-muted">Всего сотрудников: {{ employee_list.paginator.count }}</span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th scope="col">Логин</th>
+                            <th scope="col">Имя</th>
+                            <th scope="col">Фамилия</th>
+                            <th scope="col">Электронная почта</th>
+                            <th scope="col">Последний вход</th>
+                            <th scope="col">Дата регистрации</th>
+                            <th scope="col">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for employee in employee_list %}
+                            <tr>
+                                <td>{{ employee.username }}</td>
+                                <td>{{ employee.first_name|default:"—" }}</td>
+                                <td>{{ employee.last_name|default:"—" }}</td>
+                                <td>{{ employee.email|default:"—" }}</td>
+                                <td>{{ employee.last_login|date:"d.m.Y H:i"|default:"—" }}</td>
+                                <td>{{ employee.date_joined|date:"d.m.Y H:i" }}</td>
+                                <td class="text-nowrap">
+                                    <button
+                                        class="btn btn-link btn-sm p-0 text-decoration-none edit-employee-button"
+                                        type="button"
+                                        data-edit-url="{% url 'edit_employee' employee.pk %}"
+                                        data-username="{{ employee.username }}"
+                                        data-first-name="{{ employee.first_name }}"
+                                        data-last-name="{{ employee.last_name }}"
+                                        data-email="{{ employee.email }}"
+                                        aria-label="Редактировать {{ employee.username }}"
+                                        title="Редактировать"
+                                    >✏️</button>
+                                    {% if employee.is_active and not employee.is_superuser and employee.pk != user.pk %}
+                                        <form method="post" action="{% url 'deactivate_employee' employee.pk %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <button
+                                                class="btn btn-link btn-sm p-0 text-decoration-none"
+                                                type="submit"
+                                                aria-label="Отключить {{ employee.username }}"
+                                                title="Отключить сотрудника"
+                                                onclick="return confirm('Отключить сотрудника {{ employee.username }}?');"
+                                            >🗑️</button>
+                                        </form>
+                                    {% elif not employee.is_active %}
+                                        <span class="text-muted">Отключён</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="7">Сотрудники не найдены.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if employee_list.has_other_pages %}
+                <nav aria-label="Страницы сотрудников">
+                    <ul class="pagination">
+                        {% if employee_list.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?per_page={{ employees_per_page }}&amp;page={{ employee_list.previous_page_number }}" aria-label="Предыдущая страница">Назад</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled"><span class="page-link">Назад</span></li>
+                        {% endif %}
+                        {% for page_number in employee_page_range %}
+                            {% if page_number == employee_list.paginator.ELLIPSIS %}
+                                <li class="page-item disabled"><span class="page-link">{{ page_number }}</span></li>
+                            {% elif page_number == employee_list.number %}
+                                <li class="page-item active" aria-current="page"><span class="page-link">{{ page_number }}</span></li>
+                            {% else %}
+                                <li class="page-item"><a class="page-link" href="?per_page={{ employees_per_page }}&amp;page={{ page_number }}">{{ page_number }}</a></li>
+                            {% endif %}
+                        {% endfor %}
+                        {% if employee_list.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?per_page={{ employees_per_page }}&amp;page={{ employee_list.next_page_number }}" aria-label="Следующая страница">Вперёд</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled"><span class="page-link">Вперёд</span></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        </div>
+        <dialog id="edit-employee-dialog" class="border-0 rounded shadow p-4"
+                style="width: min(32rem, calc(100% - 2rem));">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Редактирование сотрудника</h2>
+                <button class="btn-close" type="button" id="close-edit-employee"
+                        aria-label="Закрыть"></button>
+            </div>
+            <form method="post" id="edit-employee-form">
+                {% csrf_token %}
+                {% for field in edit_form %}
+                    <div class="mb-3">
+                        {{ field.label_tag }}
+                        {{ field }}
+                        {% for error in field.errors %}
+                            <p class="text-danger mb-0" role="alert">{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+                {% for error in edit_form.non_field_errors %}
+                    <p class="text-danger" role="alert">{{ error }}</p>
+                {% endfor %}
+                <button class="btn btn-primary" type="submit">Сохранить</button>
+                <button class="btn btn-secondary" type="button" id="cancel-edit-employee">Отмена</button>
+            </form>
+        </dialog>
+    </main>
+    <style>
+        #add-employee-dialog::backdrop,
+        #edit-employee-dialog::backdrop {
+            background: rgb(0 0 0 / 50%);
+        }
+    </style>
+    <script>
+        const addEmployeeDialog = document.getElementById('add-employee-dialog');
+        const editEmployeeDialog = document.getElementById('edit-employee-dialog');
+        const editEmployeeForm = document.getElementById('edit-employee-form');
+        document.getElementById('open-add-employee').addEventListener('click', () => {
+            addEmployeeDialog.showModal();
+        });
+        document.getElementById('close-add-employee').addEventListener('click', () => {
+            addEmployeeDialog.close();
+        });
+
+        document.addEventListener('click', event => {
+            const button = event.target.closest('.edit-employee-button');
+            if (button) {
+                editEmployeeForm.action = button.dataset.editUrl;
+                editEmployeeForm.elements.username.value = button.dataset.username;
+                editEmployeeForm.elements.first_name.value = button.dataset.firstName;
+                editEmployeeForm.elements.last_name.value = button.dataset.lastName;
+                editEmployeeForm.elements.email.value = button.dataset.email;
+                editEmployeeDialog.showModal();
+            }
+        });
+
+        async function updateEmployeeDirectory(url, addHistoryEntry) {
+            try {
+                const response = await fetch(url, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!response.ok) {
+                    throw new Error(`Не удалось загрузить список сотрудников: ${response.status}`);
+                }
+
+                const responseDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+                const newList = responseDocument.getElementById('employee-directory-list');
+                const currentList = document.getElementById('employee-directory-list');
+                if (!newList || !currentList) {
+                    throw new Error('В ответе сервера не найден список сотрудников.');
+                }
+
+                currentList.innerHTML = newList.innerHTML;
+                if (addHistoryEntry) {
+                    window.history.pushState({}, '', url);
+                }
+            } catch (error) {
+                console.error('Ошибка при обновлении списка сотрудников:', error);
+                window.location.assign(url);
+            }
+        }
+
+        document.addEventListener('click', event => {
+            const link = event.target.closest('#employee-directory-list nav[aria-label="Страницы сотрудников"] a.page-link');
+            if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
+
+            event.preventDefault();
+            updateEmployeeDirectory(link.href, true);
+        });
+
+        document.addEventListener('submit', event => {
+            const form = event.target.closest('#employee-directory-list form[method="get"]');
+            if (!form) {
+                return;
+            }
+
+            event.preventDefault();
+            const url = new URL(form.action || window.location.href);
+            url.search = new URLSearchParams(new FormData(form)).toString();
+            updateEmployeeDirectory(url, true);
+        });
+
+        window.addEventListener('popstate', () => {
+            updateEmployeeDirectory(window.location.href, false);
+        });
+
+        document.getElementById('close-edit-employee').addEventListener('click', () => {
+            editEmployeeDialog.close();
+        });
+        document.getElementById('cancel-edit-employee').addEventListener('click', () => {
+            editEmployeeDialog.close();
+        });
+        {% if edit_employee %}
+            editEmployeeForm.action = "{% url 'edit_employee' edit_employee.pk %}";
+            editEmployeeDialog.showModal();
+        {% endif %}
+    </script>
+    {% include 'shared/background_logos.html' %}
+</body>
+</html>

@@ -1,3 +1,7 @@
+import csv
+from io import BytesIO, StringIO
+from zipfile import ZipFile
+from datetime import datetime, timezone as datetime_timezone
 from tempfile import TemporaryDirectory
 
 from django.db import connection
@@ -144,16 +148,25 @@ class LoginTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, 'Новости компании')
 
-	def test_do_page_shows_only_current_users_calls(self):
+	def test_do_page_shows_only_current_users_calls_with_call_and_employee_details(self):
+		Called.objects.all().delete()
 		other_user = User.objects.create_user(username='other-user', password='secure-password')
+		self.user.first_name = 'Иван'
+		self.user.last_name = 'Иванов'
+		self.user.save()
+		other_user.first_name = 'Пётр'
+		other_user.last_name = 'Петров'
+		other_user.save()
 		own_call = Called.objects.create(
 			number_phone='1234567890',
 			date_call=timezone.now(),
+			record_call_id='own-record-id',
 			user_call=self.user,
 		)
-		Called.objects.create(
+		other_call = Called.objects.create(
 			number_phone='0987654321',
 			date_call=timezone.now(),
+			record_call_id='other-record-id',
 			user_call=other_user,
 		)
 		self.client.force_login(self.user)
@@ -161,12 +174,103 @@ class LoginTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 		response = self.client.get(reverse('do'))
 
 		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, str(own_call.id))
 		self.assertContains(response, own_call.number_phone)
-		self.assertNotContains(response, '0987654321')
+		self.assertContains(response, own_call.record_call_id)
+		self.assertContains(response, 'Иван Иванов')
+		self.assertNotContains(response, other_call.number_phone)
+		self.assertNotContains(response, other_call.record_call_id)
+		self.assertEqual(
+			{call.id for call in response.context['calls']},
+			{own_call.id},
+		)
+
+	def test_do_page_shows_all_calls_to_superuser(self):
+		Called.objects.all().delete()
+		other_user = User.objects.create_user(username='other-user', password='secure-password')
+		own_call = Called.objects.create(number_phone='1234567890', user_call=self.user)
+		other_call = Called.objects.create(number_phone='0987654321', user_call=other_user)
+		admin = User.objects.create_superuser(
+			username='calls-admin',
+			email='calls-admin@example.com',
+			password='secure-password',
+		)
+		self.client.force_login(admin)
+
+		response = self.client.get(reverse('do'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, str(own_call.id))
+		self.assertContains(response, str(other_call.id))
+		self.assertContains(response, own_call.number_phone)
+		self.assertContains(response, other_call.number_phone)
+		self.assertEqual(
+			{call.id for call in response.context['calls']},
+			{own_call.id, other_call.id},
+		)
+		self.assertContains(response, 'ID звонка')
+		self.assertContains(response, 'ID записи звонка')
 		self.assertContains(response, 'Дата звонка')
 
-	def test_do_page_shows_only_current_users_tasks(self):
+	def test_do_page_paginates_calls_and_allows_page_size_selection(self):
+		Called.objects.all().delete()
+		for index in range(12):
+			Called.objects.create(
+				number_phone=f'{index:010d}',
+				user_call=self.user,
+			)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('do'), {'per_page': '5', 'calls_page': '2'})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['calls_per_page'], 5)
+		self.assertEqual(response.context['calls_page'].number, 2)
+		self.assertEqual(len(response.context['calls']), 5)
+		self.assertContains(response, '?per_page=5&amp;calls_page=3')
+		self.assertContains(response, 'Всего звонков: 12')
+		for option in (5, 10, 20, 50, 100):
+			self.assertContains(response, f'<option value="{option}"', html=False)
+
+		response = self.client.get(reverse('do'), {'per_page': '20'})
+		self.assertEqual(response.context['calls_per_page'], 20)
+		self.assertEqual(len(response.context['calls']), 12)
+
+	def test_do_page_paginates_current_users_tasks_and_allows_page_size_selection(self):
+		Task.objects.all().delete()
 		other_user = User.objects.create_user(username='other-task-user', password='secure-password')
+		for index in range(12):
+			Task.objects.create(
+				number_task=f'TASK-{index:03d}',
+				closed_user_task=self.user,
+			)
+		Task.objects.create(number_task='OTHER-001', closed_user_task=other_user)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('do'), {'tasks_per_page': '5', 'tasks_page': '2'})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['tasks_per_page'], 5)
+		self.assertEqual(response.context['tasks_page'].number, 2)
+		self.assertEqual(len(response.context['tasks']), 5)
+		self.assertEqual(response.context['tasks_page'].paginator.count, 12)
+		self.assertContains(response, '?tasks_per_page=5&amp;tasks_page=3&amp;tab=tasks#tasks')
+		self.assertContains(response, 'Всего задач: 12')
+		self.assertNotContains(response, 'OTHER-001')
+
+		response = self.client.get(reverse('do'), {'tasks_per_page': '20'})
+		self.assertEqual(response.context['tasks_per_page'], 20)
+		self.assertEqual(len(response.context['tasks']), 12)
+
+	def test_do_page_shows_only_current_users_tasks(self):
+		Task.objects.all().delete()
+		other_user = User.objects.create_user(username='other-task-user', password='secure-password')
+		self.user.first_name = 'Иван'
+		self.user.last_name = 'Иванов'
+		self.user.save()
+		other_user.first_name = 'Пётр'
+		other_user.last_name = 'Петров'
+		other_user.save()
 		own_task = Task.objects.create(
 			number_task='TASK-001',
 			start_date_task=timezone.now(),
@@ -184,9 +288,42 @@ class LoginTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, own_task.number_task)
+		self.assertContains(response, 'Иванов Иван')
 		self.assertNotContains(response, 'TASK-002')
+		self.assertNotContains(response, 'Петров Пётр')
+		self.assertContains(response, 'Сотрудник')
 		self.assertContains(response, 'Дата открытия')
 		self.assertContains(response, 'Дата закрытия')
+
+	def test_do_page_shows_tasks_from_all_employees_to_superuser(self):
+		Task.objects.all().delete()
+		employee = User.objects.create_user(username='task-employee', password='secure-password')
+		self.user.first_name = 'Иван'
+		self.user.last_name = 'Иванов'
+		self.user.save()
+		employee.first_name = 'Пётр'
+		employee.last_name = 'Петров'
+		employee.save()
+		own_task = Task.objects.create(number_task='ADMIN-001', closed_user_task=self.user)
+		employee_task = Task.objects.create(number_task='EMP-00001', closed_user_task=employee)
+		admin = User.objects.create_superuser(
+			username='tasks-admin',
+			email='tasks-admin@example.com',
+			password='secure-password',
+		)
+		self.client.force_login(admin)
+
+		response = self.client.get(reverse('do'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, own_task.number_task)
+		self.assertContains(response, employee_task.number_task)
+		self.assertContains(response, 'Иванов Иван')
+		self.assertContains(response, 'Петров Пётр')
+		self.assertEqual(
+			{task.id for task in response.context['tasks']},
+			{own_task.id, employee_task.id},
+		)
 
 	def test_rate_page_shows_only_current_users_call_ratings(self):
 		own_call = Called.objects.create(number_phone='1234567890', user_call=self.user)
@@ -216,6 +353,284 @@ class LoginTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 		self.assertNotContains(response, 'Чужая оценка')
 		self.assertNotContains(response, '0987654321')
 		self.assertNotContains(response, 'Рейтинг новостей')
+
+
+class EmployeeDirectoryTests(TestCase):
+	def setUp(self):
+		self.admin = User.objects.create_superuser(
+			username='directory-admin',
+			email='admin@example.com',
+			password='secure-password',
+		)
+		self.employee = User.objects.create_user(
+			username='employee-one',
+			password='secure-password',
+			first_name='Иван',
+			last_name='Иванов',
+			email='ivan@example.com',
+		)
+
+	def test_superuser_can_view_employee_directory(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.get(reverse('employees'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'employee-one')
+		self.assertContains(response, 'Иван')
+		self.assertContains(response, 'Иванов')
+		self.assertContains(response, 'ivan@example.com')
+		self.assertContains(response, 'Последний вход')
+		self.assertContains(response, 'Дата регистрации')
+		self.assertNotContains(response, 'pbkdf2_sha256')
+
+	def test_superuser_can_paginate_employee_directory(self):
+		for index in range(11):
+			User.objects.create_user(username=f'employee-{index:02d}', password='secure-password')
+		self.client.force_login(self.admin)
+
+		response = self.client.get(reverse('employees'), {'per_page': '5', 'page': '2'})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['employees_per_page'], 5)
+		self.assertEqual(response.context['employee_list'].number, 2)
+		self.assertEqual(response.context['employee_list'].paginator.count, 13)
+		self.assertEqual(len(response.context['employee_list']), 5)
+		self.assertContains(response, '?per_page=5&amp;page=3')
+		self.assertContains(response, 'Всего сотрудников: 13')
+
+		response = self.client.get(reverse('employees'), {'per_page': '20'})
+		self.assertEqual(response.context['employees_per_page'], 20)
+		self.assertEqual(len(response.context['employee_list']), 13)
+
+	def test_regular_user_is_forbidden_from_employee_directory(self):
+		self.client.force_login(self.employee)
+
+		response = self.client.get(reverse('employees'))
+
+		self.assertEqual(response.status_code, 403)
+
+	def test_employee_link_is_only_shown_to_superusers(self):
+		self.client.force_login(self.employee)
+		regular_response = self.client.get(reverse('main_page'))
+		self.assertNotContains(regular_response, reverse('employees'))
+
+		self.client.force_login(self.admin)
+		admin_response = self.client.get(reverse('main_page'))
+		self.assertContains(admin_response, reverse('employees'))
+
+	def test_superuser_can_export_employees_as_csv(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.get(reverse('export_employees', args=['csv']))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
+		self.assertIn('attachment; filename="employees.csv"', response['Content-Disposition'])
+		rows = list(csv.reader(StringIO(response.content.decode('utf-8-sig'))))
+		self.assertEqual(rows[0], ['Логин', 'Имя', 'Фамилия', 'Электронная почта', 'Последний вход', 'Дата регистрации'])
+		self.assertIn(['employee-one', 'Иван', 'Иванов', 'ivan@example.com', '', rows[1][5]], rows)
+		self.assertNotIn('password', response.content.decode('utf-8-sig').lower())
+
+	def test_superuser_can_export_employees_as_excel(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.get(reverse('export_employees', args=['xlsx']))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response['Content-Type'],
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		)
+		with ZipFile(BytesIO(response.content)) as workbook:
+			self.assertIn('xl/worksheets/sheet1.xml', workbook.namelist())
+			sheet = workbook.read('xl/worksheets/sheet1.xml').decode('utf-8')
+		self.assertIn('employee-one', sheet)
+		self.assertIn('ivan@example.com', sheet)
+
+	def test_regular_user_cannot_export_employees(self):
+		self.client.force_login(self.employee)
+
+		for file_format in ('csv', 'xlsx'):
+			response = self.client.get(reverse('export_employees', args=[file_format]))
+			self.assertEqual(response.status_code, 403)
+
+	def test_unknown_employee_export_format_is_rejected(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.get(reverse('export_employees', args=['pdf']))
+
+		self.assertEqual(response.status_code, 400)
+
+	def test_superuser_can_add_employee_with_required_fields(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.post(
+			reverse('add_employee'),
+			{
+				'username': 'new-employee',
+				'first_name': 'Мария',
+				'last_name': 'Петрова',
+				'email': 'maria@example.com',
+			},
+		)
+
+		self.assertRedirects(response, reverse('employees'))
+		employee = User.objects.get(username='new-employee')
+		self.assertEqual(employee.first_name, 'Мария')
+		self.assertEqual(employee.last_name, 'Петрова')
+		self.assertEqual(employee.email, 'maria@example.com')
+		self.assertFalse(employee.is_superuser)
+		self.assertFalse(employee.has_usable_password())
+
+	def test_employee_creation_requires_all_fields(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.post(
+			reverse('add_employee'),
+			{
+				'username': 'incomplete-employee',
+				'first_name': '',
+				'last_name': 'Петров',
+				'email': 'invalid-email',
+			},
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertFalse(User.objects.filter(username='incomplete-employee').exists())
+		self.assertContains(response, 'Обязательное поле.', status_code=400)
+
+	def test_regular_user_cannot_add_employee(self):
+		self.client.force_login(self.employee)
+
+		response = self.client.post(
+			reverse('add_employee'),
+			{
+				'username': 'forbidden-employee',
+				'first_name': 'Тест',
+				'last_name': 'Тестов',
+				'email': 'test@example.com',
+			},
+		)
+
+		self.assertEqual(response.status_code, 403)
+		self.assertFalse(User.objects.filter(username='forbidden-employee').exists())
+
+	def test_duplicate_username_is_rejected(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.post(
+			reverse('add_employee'),
+			{
+				'username': self.employee.username,
+				'first_name': 'Другое',
+				'last_name': 'Имя',
+				'email': 'different@example.com',
+			},
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(User.objects.filter(username=self.employee.username).count(), 1)
+
+	def test_superuser_can_edit_employee_details_without_changing_password(self):
+		self.client.force_login(self.admin)
+		original_password = self.employee.password
+
+		response = self.client.post(
+			reverse('edit_employee', args=[self.employee.pk]),
+			{
+				'username': 'employee-renamed',
+				'first_name': 'Пётр',
+				'last_name': 'Петров',
+				'email': 'petr@example.com',
+			},
+		)
+
+		self.assertRedirects(response, reverse('employees'))
+		self.employee.refresh_from_db()
+		self.assertEqual(self.employee.username, 'employee-renamed')
+		self.assertEqual(self.employee.first_name, 'Пётр')
+		self.assertEqual(self.employee.last_name, 'Петров')
+		self.assertEqual(self.employee.email, 'petr@example.com')
+		self.assertEqual(self.employee.password, original_password)
+
+	def test_edit_button_opens_employee_form_on_directory_page(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.get(reverse('employees'))
+
+		self.assertContains(response, 'edit-employee-dialog')
+		self.assertContains(response, 'edit-employee-button')
+		self.assertContains(response, 'data-username="employee-one"')
+
+	def test_invalid_edit_keeps_edit_modal_open_with_errors(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.post(
+			reverse('edit_employee', args=[self.employee.pk]),
+			{
+				'username': '',
+				'first_name': 'Иван',
+				'last_name': 'Иванов',
+				'email': 'ivan@example.com',
+			},
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertContains(response, 'edit-employee-dialog', status_code=400)
+		self.assertContains(response, 'Обязательное поле.', status_code=400)
+		self.assertContains(response, f"editEmployeeDialog.showModal()", status_code=400)
+
+	def test_edit_employee_rejects_duplicate_username(self):
+		other_employee = User.objects.create_user(username='another-employee', password='password')
+		self.client.force_login(self.admin)
+
+		response = self.client.post(
+			reverse('edit_employee', args=[self.employee.pk]),
+			{
+				'username': other_employee.username,
+				'first_name': 'Иван',
+				'last_name': 'Иванов',
+				'email': 'ivan@example.com',
+			},
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.employee.refresh_from_db()
+		self.assertEqual(self.employee.username, 'employee-one')
+
+	def test_superuser_can_deactivate_employee_without_deleting_account(self):
+		self.client.force_login(self.admin)
+
+		response = self.client.post(reverse('deactivate_employee', args=[self.employee.pk]))
+
+		self.assertRedirects(response, reverse('employees'))
+		self.employee.refresh_from_db()
+		self.assertFalse(self.employee.is_active)
+		self.assertTrue(User.objects.filter(pk=self.employee.pk).exists())
+
+	def test_deactivation_rejects_get_and_protects_superusers(self):
+		self.client.force_login(self.admin)
+
+		self.assertEqual(
+			self.client.get(reverse('deactivate_employee', args=[self.employee.pk])).status_code,
+			405,
+		)
+		self.assertEqual(
+			self.client.post(reverse('deactivate_employee', args=[self.admin.pk])).status_code,
+			403,
+		)
+		self.admin.refresh_from_db()
+		self.assertTrue(self.admin.is_active)
+
+	def test_regular_user_cannot_edit_or_deactivate_employees(self):
+		self.client.force_login(self.employee)
+
+		edit_response = self.client.get(reverse('edit_employee', args=[self.admin.pk]))
+		deactivate_response = self.client.post(reverse('deactivate_employee', args=[self.admin.pk]))
+
+		self.assertEqual(edit_response.status_code, 403)
+		self.assertEqual(deactivate_response.status_code, 403)
 
 
 class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
@@ -264,6 +679,39 @@ class NewsPublishingTests(UnmanagedNewsTablesMixin, TransactionTestCase):
 		response = self.client.get(reverse('news'))
 
 		self.assertContains(response, 'Добавить новость')
+
+	def test_news_are_displayed_newest_first(self):
+		old_news = News.objects.create(
+			text='Старая новость',
+			create_date=timezone.now() - timezone.timedelta(days=1),
+		)
+		new_news = News.objects.create(
+			text='Новая новость',
+			create_date=timezone.now(),
+		)
+		self.client.force_login(self.regular_user)
+
+		response = self.client.get(reverse('news'))
+
+		self.assertEqual(
+			[item.pk for item in response.context['news_list']],
+			[new_news.pk, old_news.pk],
+		)
+		self.assertLess(
+			response.content.index('Новая новость'.encode()),
+			response.content.index('Старая новость'.encode()),
+		)
+
+	def test_news_publication_time_is_displayed_in_moscow_timezone(self):
+		News.objects.create(
+			text='Новость по московскому времени',
+			create_date=datetime(2025, 1, 1, 20, 12, tzinfo=datetime_timezone.utc),
+		)
+		self.client.force_login(self.regular_user)
+
+		response = self.client.get(reverse('news'))
+
+		self.assertContains(response, '01.01.2025 23:12')
 
 	def test_superuser_can_open_and_submit_news_edit_form(self):
 		news_item = News.objects.create(

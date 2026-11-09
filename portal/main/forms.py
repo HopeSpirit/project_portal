@@ -20,6 +20,89 @@ class NewsForm(forms.Form):
     )
 
 
+class EmployeeCreateForm(forms.ModelForm):
+    username = forms.CharField(
+        label='Логин',
+        max_length=150,
+        required=True,
+        error_messages={'required': 'Обязательное поле.'},
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+    )
+    first_name = forms.CharField(
+        label='Имя',
+        max_length=150,
+        required=True,
+        error_messages={'required': 'Обязательное поле.'},
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+    )
+    last_name = forms.CharField(
+        label='Фамилия',
+        max_length=150,
+        required=True,
+        error_messages={'required': 'Обязательное поле.'},
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+    )
+    email = forms.EmailField(
+        label='Электронная почта',
+        max_length=254,
+        required=True,
+        error_messages={
+            'required': 'Обязательное поле.',
+            'invalid': 'Введите корректный адрес электронной почты.',
+        },
+        widget=forms.EmailInput(attrs={'class': 'form-control'}),
+    )
+
+    class Meta:
+        model = get_user_model()
+        fields = ('username', 'first_name', 'last_name', 'email')
+
+    def save(self, commit=True):
+        employee = super().save(commit=False)
+        employee.set_unusable_password()
+        if commit:
+            employee.save()
+        return employee
+
+
+class EmployeeUpdateForm(forms.ModelForm):
+    username = forms.CharField(
+        label='Логин',
+        max_length=150,
+        required=True,
+        error_messages={'required': 'Обязательное поле.'},
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+    )
+    first_name = forms.CharField(
+        label='Имя',
+        max_length=150,
+        required=True,
+        error_messages={'required': 'Обязательное поле.'},
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+    )
+    last_name = forms.CharField(
+        label='Фамилия',
+        max_length=150,
+        required=True,
+        error_messages={'required': 'Обязательное поле.'},
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+    )
+    email = forms.EmailField(
+        label='Электронная почта',
+        max_length=254,
+        required=True,
+        error_messages={
+            'required': 'Обязательное поле.',
+            'invalid': 'Введите корректный адрес электронной почты.',
+        },
+        widget=forms.EmailInput(attrs={'class': 'form-control'}),
+    )
+
+    class Meta:
+        model = get_user_model()
+        fields = ('username', 'first_name', 'last_name', 'email')
+
+
 # class AudioRatingForm(forms.Form):
 #     target_user = forms.ModelChoiceField(
 #         queryset=get_user_model().objects.none(),

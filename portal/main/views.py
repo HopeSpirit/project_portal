@@ -1,17 +1,24 @@
+import csv
+from io import BytesIO, StringIO
+from zipfile import ZIP_DEFLATED, ZipFile
+from xml.sax.saxutils import escape
+
 from django.shortcuts import render
 from django.contrib import messages
 from django.contrib.auth import authenticate, login
+from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.db import transaction
 from django.db.models import Count, Q
-from django.http import FileResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
-from .forms import NewsForm#, AudioRatingForm, CallRecordingUploadForm, 
+from .forms import EmployeeCreateForm, EmployeeUpdateForm, NewsForm
 from .models import AudioRating, CallRate, Called, CallRecording, News, NewsRate, Task
 
 # Create your views here.
@@ -59,10 +66,231 @@ def main_page(request):
 
 
 @login_required(login_url='index')
+def employees(request):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Просматривать сотрудников могут только суперпользователи.')
+
+    return render_employee_directory(request)
+
+
+def render_employee_directory(request, form=None, edit_employee=None, edit_form=None, status=200):
+    employees = get_user_model().objects.only(
+        'username',
+        'first_name',
+        'last_name',
+        'email',
+        'last_login',
+        'date_joined',
+    ).order_by('username')
+    per_page_options = (5, 10, 20, 50, 100)
+    requested_per_page = request.GET.get('per_page', '10')
+    per_page = int(requested_per_page) if requested_per_page in {str(option) for option in per_page_options} else 10
+    employee_list = Paginator(employees, per_page).get_page(request.GET.get('page'))
+    return render(
+        request,
+        'employees/employees.html',
+        {
+            'employee_list': employee_list,
+            'employee_page_range': employee_list.paginator.get_elided_page_range(employee_list.number),
+            'employees_per_page': per_page,
+            'employees_per_page_options': per_page_options,
+            'form': form or EmployeeCreateForm(),
+            'edit_employee': edit_employee,
+            'edit_form': edit_form or EmployeeUpdateForm(instance=edit_employee),
+        },
+        status=status,
+    )
+
+
+@login_required(login_url='index')
+def export_employees(request, file_format):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Экспортировать сотрудников могут только суперпользователи.')
+
+    if file_format not in ('csv', 'xlsx'):
+        return HttpResponseBadRequest('Неподдерживаемый формат файла.')
+
+    columns = (
+        ('Логин', 'username'),
+        ('Имя', 'first_name'),
+        ('Фамилия', 'last_name'),
+        ('Электронная почта', 'email'),
+        ('Последний вход', 'last_login'),
+        ('Дата регистрации', 'date_joined'),
+    )
+    employees = get_user_model().objects.only(
+        *(field for _, field in columns)
+    ).order_by('username')
+    rows = [tuple(label for label, _ in columns)]
+    for employee in employees:
+        row = []
+        for _, field in columns:
+            value = getattr(employee, field)
+            if field in ('last_login', 'date_joined'):
+                value = timezone.localtime(value).strftime('%d.%m.%Y %H:%M') if value else ''
+            row.append(value or '')
+        rows.append(tuple(row))
+
+    if file_format == 'csv':
+        output = StringIO(newline='')
+        csv.writer(output).writerows(rows)
+        response = HttpResponse(
+            output.getvalue().encode('utf-8-sig'),
+            content_type='text/csv; charset=utf-8',
+        )
+        response['Content-Disposition'] = 'attachment; filename="employees.csv"'
+        return response
+
+    output = BytesIO()
+    with ZipFile(output, 'w', ZIP_DEFLATED) as workbook:
+        workbook.writestr(
+            '[Content_Types].xml',
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            '</Types>',
+        )
+        workbook.writestr(
+            '_rels/.rels',
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            '</Relationships>',
+        )
+        workbook.writestr(
+            'xl/workbook.xml',
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Сотрудники" sheetId="1" r:id="rId1"/></sheets>'
+            '</workbook>',
+        )
+        workbook.writestr(
+            'xl/_rels/workbook.xml.rels',
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            '</Relationships>',
+        )
+        sheet_rows = []
+        for row_number, row in enumerate(rows, start=1):
+            cells = []
+            for column_number, value in enumerate(row):
+                column_name = ''
+                number = column_number + 1
+                while number:
+                    number, remainder = divmod(number - 1, 26)
+                    column_name = chr(65 + remainder) + column_name
+                cell_ref = f'{column_name}{row_number}'
+                cells.append(
+                    f'<c r="{cell_ref}" t="inlineStr"><is><t xml:space="preserve">'
+                    f'{escape(str(value))}</t></is></c>'
+                )
+            sheet_rows.append(f'<row r="{row_number}">{"".join(cells)}</row>')
+        worksheet = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+            '</worksheet>'
+        )
+        workbook.writestr('xl/worksheets/sheet1.xml', worksheet)
+
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="employees.xlsx"'
+    return response
+
+
+@login_required(login_url='index')
+@require_POST
+def add_employee(request):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Добавлять сотрудников могут только суперпользователи.')
+
+    form = EmployeeCreateForm(request.POST)
+    if form.is_valid():
+        form.save()
+        messages.success(
+            request,
+            'Сотрудник добавлен. Установите ему пароль через Django Admin.',
+        )
+        return redirect('employees')
+
+    return render_employee_directory(request, form=form, status=400)
+
+
+@login_required(login_url='index')
+@require_http_methods(['GET', 'POST'])
+def edit_employee(request, employee_id):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Редактировать сотрудников могут только суперпользователи.')
+
+    employee = get_object_or_404(get_user_model(), pk=employee_id)
+    form = EmployeeUpdateForm(request.POST or None, instance=employee)
+    if request.method == 'POST':
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Данные сотрудника обновлены.')
+            return redirect('employees')
+
+    return render_employee_directory(
+        request,
+        edit_employee=employee,
+        edit_form=form,
+        status=400 if request.method == 'POST' else 200,
+    )
+
+
+@login_required(login_url='index')
+@require_POST
+def deactivate_employee(request, employee_id):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden('Отключать сотрудников могут только суперпользователи.')
+
+    employee = get_object_or_404(get_user_model(), pk=employee_id)
+    if employee.is_superuser or employee.pk == request.user.pk:
+        return HttpResponseForbidden('Нельзя отключить суперпользователя.')
+
+    if employee.is_active:
+        employee.is_active = False
+        employee.save(update_fields=['is_active'])
+        messages.success(request, 'Сотрудник отключён.')
+    else:
+        messages.info(request, 'Сотрудник уже отключён.')
+    return redirect('employees')
+
+
+@login_required(login_url='index')
 def do_page(request):
-    calls = Called.objects.filter(user_call=request.user)
-    tasks = Task.objects.filter(closed_user_task=request.user)
-    return render(request, 'do/do.html', {'calls': calls, 'tasks': tasks})
+    calls = Called.objects.select_related('user_call')
+    if not request.user.is_superuser:
+        calls = calls.filter(user_call=request.user)
+    per_page_options = (5, 10, 20, 50, 100)
+    requested_per_page = request.GET.get('per_page', '10')
+    per_page = int(requested_per_page) if requested_per_page in {str(option) for option in per_page_options} else 10
+    calls_page = Paginator(calls, per_page).get_page(request.GET.get('calls_page'))
+    tasks = Task.objects.select_related('closed_user_task')
+    if not request.user.is_superuser:
+        tasks = tasks.filter(closed_user_task=request.user)
+    requested_tasks_per_page = request.GET.get('tasks_per_page', '10')
+    tasks_per_page = int(requested_tasks_per_page) if requested_tasks_per_page in {str(option) for option in per_page_options} else 10
+    tasks_page = Paginator(tasks, tasks_per_page).get_page(request.GET.get('tasks_page'))
+    return render(request, 'do/do.html', {
+        'calls': calls_page,
+        'calls_page': calls_page,
+        'calls_page_range': calls_page.paginator.get_elided_page_range(calls_page.number),
+        'calls_per_page': per_page,
+        'calls_per_page_options': per_page_options,
+        'tasks': tasks_page,
+        'tasks_page': tasks_page,
+        'tasks_page_range': tasks_page.paginator.get_elided_page_range(tasks_page.number),
+        'tasks_per_page': tasks_per_page,
+    })
 
 
 @login_required(login_url='index')
@@ -76,7 +304,7 @@ def render_news_page(request, form=None, edit_news=None, edit_form=None, status=
     ).select_related('author').annotate(
         like_count=Count('rates', filter=Q(rates__like_news=True), distinct=True),
         dislike_count=Count('rates', filter=Q(rates__dislike_news=True), distinct=True),
-    )
+    ).order_by('-create_date', '-pk')
     if not request.user.is_superuser:
         user_votes = NewsRate.objects.filter(author_rate=request.user).order_by('-id')
         votes_by_news = {}
@@ -121,7 +349,7 @@ def rate_page(request):
         rating.has_recording = bool(
             rating.id_call and rating.id_call.record_call_id in recording_ids
         )
-    return render(request, 'rate/rate.html', {'call_ratings': call_ratings})
+    return render(request, 'rate/rate.html')#, {'call_ratings': call_ratings})
 
 
 
